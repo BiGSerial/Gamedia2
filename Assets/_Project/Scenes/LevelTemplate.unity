@@ -335,7 +335,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Player
   moveSpeed: 6
-  jumpForce: 20
+  jumpForce: 12
   groundCheck: {fileID: 762528236}
   groundCheckSize: {x: 0.8, y: 0.12}
   wallCheck: {fileID: 1377543576}
