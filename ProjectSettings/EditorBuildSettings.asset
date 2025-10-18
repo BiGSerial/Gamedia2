@@ -9,7 +9,7 @@ EditorBuildSettings:
     path: Assets/_Project/Scenes/Main.unity
     guid: 9f68b34e287b3c14da307138a60982ca
   - enabled: 1
-    path: Assets/_Project/Scenes/Level1.unity
+    path: Assets/_Project/Scenes/Level1-remake.unity
     guid: 7f6f75fea73f26543a2ce1e60cf8bb8d
   m_configObjects:
     com.unity.input.settings.actions: {fileID: -944628639613478452, guid: 2bcd2660ca9b64942af0de543d8d7100, type: 3}
