@@ -1,11 +1,12 @@
-// Assets/_Project/Scripts/Enemies/EnemyWalker.cs
+// Assets/_Project/Scripts/Enemies/EnemyScoutWalker.cs
 using UnityEngine;
 using UnityEngine.Events;
 
 [RequireComponent(typeof(Rigidbody2D))]
 [RequireComponent(typeof(Collider2D))]
-public class EnemyWalker : MonoBehaviour
+public class EnemyScoutWalker : MonoBehaviour
 {
+    public enum State { Run, Look }
     public enum AutoDirMode { None, FromVisual }
 
     [Header("Movimento")]
@@ -21,14 +22,19 @@ public class EnemyWalker : MonoBehaviour
     [SerializeField] bool invertFacing = true; // visual invertido vs movimento
 
     [Header("Detecção de borda/parede")]
-    [SerializeField] Transform groundCheck;                // opcional
-    [SerializeField] Transform wallCheck;                  // opcional
+    [SerializeField] Transform groundCheck;
+    [SerializeField] Transform wallCheck;
     [SerializeField] float groundCheckDistance = 0.25f;
     [SerializeField] float wallCheckDistance   = 0.12f;
-    [SerializeField] LayerMask groundLayer;                // inclua Tilemap/Plataforma
-    [SerializeField] LayerMask wallMask;                   // normalmente igual ao groundLayer
-    [SerializeField] float edgeProbeAhead = 0.1f;          // probe à frente quando não há empties
+    [SerializeField] LayerMask groundLayer;
+    [SerializeField] LayerMask wallMask;
+    [SerializeField] float edgeProbeAhead = 0.1f;
     [SerializeField] float flipCooldown = 0.15f;
+
+    [Header("Ciclo aleatório")]
+    [SerializeField] Vector2 runTimeRange = new Vector2(1.2f, 2.4f);
+    [SerializeField] Vector2 lookHoldRange = new Vector2(0.25f, 0.5f);
+    [SerializeField] Vector2 lookIdleDelayRange = new Vector2(0.05f, 0.15f);
 
     [Header("Stomp (pisão do player)")]
     [SerializeField] string playerTag = "Player";
@@ -36,13 +42,13 @@ public class EnemyWalker : MonoBehaviour
     [SerializeField] float stompBounce = 8f;
 
     [Header("Morte com pulo + queda")]
-    [SerializeField] bool destroyOnDeath = true;
-    [SerializeField] float deathJumpY = 5.5f;
+    [SerializeField] bool  destroyOnDeath  = true;
+    [SerializeField] float deathJumpY      = 5.5f;
     [SerializeField] float deathKnockbackX = 1.5f;
-    [SerializeField] float deathGravity = 4.5f;
-    [SerializeField] float deathTorque = 25f;
+    [SerializeField] float deathGravity    = 4.5f;
+    [SerializeField] float deathTorque     = 25f;
     [SerializeField] float offscreenMargin = 1.0f;
-    [SerializeField] float deathTimeout = 4.0f;
+    [SerializeField] float deathTimeout    = 4.0f;
 
     [Header("Dano no Player (lateral/baixo)")]
     [SerializeField] float hitCooldown = 0.35f;
@@ -51,6 +57,7 @@ public class EnemyWalker : MonoBehaviour
     [Header("Animação (opcional)")]
     [SerializeField] Animator animator;
     [SerializeField] string walkBool = "walk";
+    [SerializeField] string lookBool = "look";
     [SerializeField] string deadTrigger = "dead";
 
     [Header("Áudio (opcional)")]
@@ -61,16 +68,26 @@ public class EnemyWalker : MonoBehaviour
     public UnityEvent onPlayerHit;
     public UnityEvent<Vector2> onPlayerBounce;
 
+    // ---- internos
     Rigidbody2D rb;
     SpriteRenderer sr;
     Collider2D col;
     Collider2D[] allColliders;
 
-    bool isDead = false;
-    float lastHitTime = -999f;
+    public State state { get; private set; } = State.Run;
+    float stateTimer = 0f;
     float lastFlipTime = -999f;
+    float lastHitTime  = -999f;
+    bool  isDead = false;
+    bool  lookStageTwo = false;
+    int   cachedRunOppositeDir = 1;
 
     Vector3 groundChkLocal0, wallChkLocal0;
+
+    // debounce/histerese de sensor
+    int missGroundFrames = 0;
+    int hitWallFrames = 0;
+    [SerializeField] int sensorFramesNeeded = 2; // 2–3 frames é bom
 
     void Awake()
     {
@@ -87,19 +104,62 @@ public class EnemyWalker : MonoBehaviour
         if (groundCheck) groundChkLocal0 = groundCheck.localPosition;
         if (wallCheck)   wallChkLocal0   = wallCheck.localPosition;
         UpdateSensorOffsets();
+
+        EnterRun();
     }
 
     void Update()
     {
         if (isDead) return;
-        Patrol();
+
+        // --- SENSORES COM DEBOUNCE ---
+        bool noGround = !GroundAhead();
+        bool wall     =  WallAhead();
+
+        missGroundFrames = noGround ? missGroundFrames + 1 : 0;
+        hitWallFrames    = wall     ? hitWallFrames + 1    : 0;
+
+        bool wantFlip = (missGroundFrames >= sensorFramesNeeded) || (hitWallFrames >= sensorFramesNeeded);
+
+        // Só flipa ao detectar obstáculo se estiver CORRENDO
+        if (state == State.Run && wantFlip && Time.time - lastFlipTime > flipCooldown)
+        {
+            direction *= -1;
+            lastFlipTime = Time.time;
+            UpdateSensorOffsets();
+
+            missGroundFrames = 0;
+            hitWallFrames = 0;
+        }
+
+        // Se está olhando e detectou risco, encerra “look” e garante que irá correr pro lado seguro
+        if (state == State.Look && wantFlip)
+        {
+            cachedRunOppositeDir = -direction;
+            stateTimer = 0f; // força avançar ciclo
+        }
+
+        // --- MÁQUINA DE ESTADOS ---
+        stateTimer -= Time.deltaTime;
+        switch (state)
+        {
+            case State.Run:
+                if (stateTimer <= 0f) EnterLook();
+                break;
+            case State.Look:
+                if (stateTimer <= 0f) AdvanceLookStageOrRun();
+                break;
+        }
+
         UpdateAnimator();
     }
 
     void FixedUpdate()
     {
         if (isDead) return;
-        rb.linearVelocity = new Vector2(direction * speed, rb.linearVelocity.y);
+        rb.linearVelocity = (state == State.Run)
+            ? new Vector2(direction * speed, rb.linearVelocity.y)
+            : new Vector2(0f, rb.linearVelocity.y);
     }
 
     void LateUpdate()
@@ -123,8 +183,7 @@ public class EnemyWalker : MonoBehaviour
             int signScale = Mathf.Sign(transform.lossyScale.x) >= 0 ? 1 : -1;
             visualDir *= signScale;
 
-            // Se visual é invertido vs movimento, movimento deve ser o oposto do que "olha"
-            if (invertFacing) visualDir *= -1;
+            if (invertFacing) visualDir *= -1; // movimento = oposto do "olhar"
 
             dir = visualDir;
         }
@@ -133,18 +192,53 @@ public class EnemyWalker : MonoBehaviour
         direction = dir;
     }
 
-    void Patrol()
+    // ---------- estados ----------
+    void EnterRun()
     {
-        bool hasGroundAhead = GroundAhead();
-        bool hasWallAhead   = WallAhead();
-
-        if (( !hasGroundAhead || hasWallAhead ) && Time.time - lastFlipTime > flipCooldown)
+        state = State.Run;
+        lookStageTwo = false;
+        stateTimer = Random.Range(runTimeRange.x, runTimeRange.y);
+        if (animator)
         {
-            Flip();
-            lastFlipTime = Time.time;
+            if (!string.IsNullOrEmpty(walkBool)) animator.SetBool(walkBool, true);
+            if (!string.IsNullOrEmpty(lookBool)) animator.SetBool(lookBool, false);
         }
     }
 
+    void EnterLook()
+    {
+        state = State.Look;
+        lookStageTwo = false;
+        stateTimer = Random.Range(lookIdleDelayRange.x, lookIdleDelayRange.y)
+                   + Random.Range(lookHoldRange.x, lookHoldRange.y);
+        cachedRunOppositeDir = -direction;
+
+        if (animator)
+        {
+            if (!string.IsNullOrEmpty(walkBool)) animator.SetBool(walkBool, false);
+            if (!string.IsNullOrEmpty(lookBool)) animator.SetBool(lookBool, true);
+        }
+    }
+
+    void AdvanceLookStageOrRun()
+    {
+        if (!lookStageTwo)
+        {
+            direction *= -1; // vira o rosto (sem mover)
+            UpdateSensorOffsets();
+
+            lookStageTwo = true;
+            stateTimer = Random.Range(lookHoldRange.x, lookHoldRange.y);
+        }
+        else
+        {
+            direction = cachedRunOppositeDir; // corre pro lado oposto
+            UpdateSensorOffsets();
+            EnterRun();
+        }
+    }
+
+    // ---------- sensores ----------
     bool GroundAhead()
     {
         Vector2 origin;
@@ -155,7 +249,6 @@ public class EnemyWalker : MonoBehaviour
             float ahead = Mathf.Sign(direction) * (b.extents.x + edgeProbeAhead);
             origin = new Vector2(b.center.x + ahead, b.min.y + 0.02f);
         }
-
         var hit = Physics2D.Raycast(origin, Vector2.down, groundCheckDistance, groundLayer);
         Debug.DrawLine(origin, origin + Vector2.down * groundCheckDistance, hit ? Color.yellow : Color.red, 0f);
         return hit.collider != null;
@@ -171,26 +264,21 @@ public class EnemyWalker : MonoBehaviour
             float ahead = Mathf.Sign(direction) * (b.extents.x + 0.02f);
             origin = new Vector2(b.center.x + ahead, b.center.y);
         }
-
         Vector2 lookDir = new Vector2(direction, 0f);
         var hit = Physics2D.Raycast(origin, lookDir, wallCheckDistance, wallMask);
         Debug.DrawLine(origin, origin + lookDir * wallCheckDistance, hit ? Color.cyan : Color.gray, 0f);
         if (!hit.collider) return false;
-
         float facing = Mathf.Sign(direction);
-        return hit.normal.x * facing < -0.2f;
+        return hit.normal.x * facing < -0.2f; // normal contra o movimento = parede
     }
 
     void UpdateAnimator()
     {
         if (!animator) return;
-        animator.SetBool(walkBool, Mathf.Abs(rb.linearVelocity.x) > 0.05f);
-    }
-
-    void Flip()
-    {
-        direction *= -1;
-        UpdateSensorOffsets();
+        if (!string.IsNullOrEmpty(walkBool))
+            animator.SetBool(walkBool, state == State.Run && Mathf.Abs(rb.linearVelocity.x) > 0.01f);
+        if (!string.IsNullOrEmpty(lookBool))
+            animator.SetBool(lookBool, state == State.Look);
     }
 
     void UpdateSensorOffsets()
@@ -201,13 +289,13 @@ public class EnemyWalker : MonoBehaviour
             wallCheck.localPosition   = new Vector3(Mathf.Abs(wallChkLocal0.x)   * direction, wallChkLocal0.y,   wallChkLocal0.z);
     }
 
+    // ---------- combate / morte ----------
     void OnCollisionEnter2D(Collision2D collision)
     {
         if (isDead) return;
         if (!collision.collider.CompareTag(playerTag)) return;
 
         var prb = collision.rigidbody;
-
         bool playerAbove      = collision.transform.position.y > (transform.position.y + stompYOffset);
         bool playerDescending = prb ? (prb.linearVelocity.y <= 0f) : true;
 
@@ -262,21 +350,7 @@ public class EnemyWalker : MonoBehaviour
         var cam = Camera.main;
         if (!cam) { Destroy(gameObject); return; }
         float camBottom = cam.transform.position.y - cam.orthographicSize;
-        if (transform.position.y < camBottom - offscreenMargin) Destroy(gameObject);
-    }
-
-    void OnDrawGizmosSelected()
-    {
-        if (groundCheck != null)
-        {
-            Gizmos.color = Color.yellow;
-            Gizmos.DrawLine(groundCheck.position, groundCheck.position + Vector3.down * groundCheckDistance);
-        }
-        if (wallCheck != null)
-        {
-            Gizmos.color = Color.cyan;
-            Vector3 dir = new Vector3(Mathf.Sign(direction), 0f, 0f);
-            Gizmos.DrawLine(wallCheck.position, wallCheck.position + dir * wallCheckDistance);
-        }
+        if (transform.position.y < camBottom - offscreenMargin)
+            Destroy(gameObject);
     }
 }

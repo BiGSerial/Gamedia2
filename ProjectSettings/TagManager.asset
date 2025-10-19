@@ -8,6 +8,7 @@ TagManager:
   - Midground
   - Foreground
   - Ground
+  - Enemy
   layers:
   - Default
   - TransparentFX
@@ -20,7 +21,7 @@ TagManager:
   - Player
   - Foreground
   - Ground
-  - 
+  - Enemy
   - 
   - 
   - 
