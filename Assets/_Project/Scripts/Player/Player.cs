@@ -14,7 +14,7 @@ public class Player : MonoBehaviour
     [Range(1f, 2.5f)] public float runAnimSpeed = 1.4f;
 
     [Header("Ground Check")]
-        [SerializeField] Collider2D feetTrigger; // arraste o collider do pé aqui
+    [SerializeField] Collider2D feetTrigger; // arraste o collider do pé aqui
     [SerializeField] LayerMask groundMask;
 
     public AudioSource jumpSound;
@@ -25,6 +25,7 @@ public class Player : MonoBehaviour
     SpriteRenderer sr;
 
     bool isGrounded = false;
+    bool wasGrounded = false;   // <— usado para detectar a transição ar→chão
     bool canDoubleJump = false;
     bool sprintLatched = false;
 
@@ -47,7 +48,7 @@ public class Player : MonoBehaviour
         ReadInput();
         Move();
         Jump();
-        UpdateFallFlag();  // garante Fall/Jump consistentes
+        UpdateFallFlag();  // garante Fall/Jump consistentes no ar
     }
 
     void ReadInput()
@@ -91,14 +92,10 @@ public class Player : MonoBehaviour
         // VELOCIDADE CORRETA
         rb.linearVelocity = new Vector2(horizontalInput * currentSpeed, rb.linearVelocity.y);
 
-        // limite mínimo em X (se quiser manter)
-        if (transform.position.x < -9.38559f)
-            rb.AddForce(new Vector2(20f, 1f), ForceMode2D.Impulse);
-
         // Animator
         if (animator)
         {
-            animator.SetBool("MoveX", isMoving); // você usa Bool para andar/parar
+            animator.SetBool("MoveX", isMoving); // bool para andar/parar
             animator.speed = (isMoving && isGrounded) ? (sprintLatched ? runAnimSpeed : 1f) : 1f;
         }
 
@@ -136,8 +133,36 @@ public class Player : MonoBehaviour
     void FixedUpdate()
     {
         // Verificação de chão usando o collider dos pés
-        isGrounded = feetTrigger.IsTouchingLayers(groundMask);
-        animator.SetBool("Ground", isGrounded);
+        bool groundedNow = feetTrigger && feetTrigger.IsTouchingLayers(groundMask);
+        isGrounded = groundedNow;
+
+        // Atualiza flag Ground
+        if (animator) animator.SetBool("Ground", isGrounded);
+
+        // ======= Correção: ao detectar chão, limpa Jump/dblJump/Fall imediatamente =======
+        if (isGrounded)
+        {
+            // Resetar estados de salto/queda assim que tocar o chão
+            if (animator)
+            {
+                animator.SetBool("Jump", false);
+                animator.SetBool("dblJump", false);
+                animator.SetBool("Fall", false);
+            }
+
+            // Após pousar, não deve manter o "direito" de duplo pulo
+            canDoubleJump = false;
+
+            // Evento de pouso (opcional)
+            if (!wasGrounded)
+            {
+                // exemplo: tocar um som de pouso, emitir poeira etc.
+                // if (footstepSound && Mathf.Abs(rb.linearVelocity.x) > 0.1f) footstepSound.Play();
+            }
+        }
+
+        // guarda o estado para detectar a transição no próximo frame de física
+        wasGrounded = isGrounded;
     }
 
     void UpdateFallFlag()
@@ -156,48 +181,4 @@ public class Player : MonoBehaviour
             }
         }
     }
-
-    // void OnCollisionEnter2D(Collision2D collision)
-    // {
-    //     if (collision.collider.CompareTag("Ground"))
-    //     {
-    //         isGrounded = true;
-    //         canDoubleJump = false;
-
-    //         if (animator)
-    //         {
-    //             animator.SetBool("Ground", true);
-    //             animator.SetBool("Fall", false);
-    //             animator.SetBool("Jump", false);     // <— zera Jump no pouso
-    //             animator.SetBool("dblJump", false);  // opcional: zera também
-    //         }
-    //     }
-    // }
-
-    // void OnCollisionExit2D(Collision2D collision)
-    // {
-    //     if (collision.collider.CompareTag("Ground"))
-    //     {
-    //         // Check if we're actually leaving the ground (moving upward or no longer touching)
-    //         bool stillTouchingGround = false;
-    //         foreach (ContactPoint2D contact in collision.contacts)
-    //         {
-    //             if (contact.normal.y > 0.5f) // Ground contact has upward normal
-    //             {
-    //                 stillTouchingGround = true;
-    //                 break;
-    //             }
-    //         }
-            
-    //         if (!stillTouchingGround)
-    //         {
-    //             isGrounded = false;
-    //             if (animator)
-    //             {
-    //                 animator.SetBool("Ground", false);
-    //                 animator.SetBool("Jump", true);
-    //             }
-    //         }
-    //     }
-    // }
 }

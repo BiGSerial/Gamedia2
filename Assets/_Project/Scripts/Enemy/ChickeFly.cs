@@ -18,6 +18,25 @@ public class ChickeFly : MonoBehaviour
     [SerializeField] private string deadTrigger = "dead"; // opcional
     public AudioSource deathSound;                        // opcional
 
+    [Header("Pontuacao")]
+    [SerializeField] private int scoreValue = 150;
+
+    [Header("Death Collision Ignore")]
+    [Tooltip("Desabilita TODOS os colliders ao morrer (recomendado)")]
+    [SerializeField] private bool disableCollidersOnDeath = true;
+
+    [Tooltip("Troca a layer do inimigo ao morrer para ignorar colisões de cenário")]
+    [SerializeField] private bool changeLayerOnDeath = true;
+
+    [Tooltip("Nome da layer usada após a morte (configure nas Collision Matrix)")]
+    [SerializeField] private string deadLayerName = "Dead";
+
+    [Tooltip("Opcional: usa excludeLayers do Rigidbody2D para ignorar colisões após a morte")]
+    [SerializeField] private bool useExcludeLayersOnDeath = true;
+
+    [Tooltip("Layers a ignorar ao morrer (ex.: Ground/Tilemap/Plataformas)")]
+    [SerializeField] private LayerMask ignoreOnDeath = 0;
+
     [Header("Stomp (pulo na cabeça)")]
     [SerializeField] private float stompBounce = 8f;
 
@@ -45,6 +64,7 @@ public class ChickeFly : MonoBehaviour
 
     private Rigidbody2D rb;
     private Collider2D[] allColliders;
+    private int originalLayer;
 
     void Awake()
     {
@@ -58,6 +78,9 @@ public class ChickeFly : MonoBehaviour
         rb.gravityScale = 0f;
 
         allColliders = GetComponentsInChildren<Collider2D>(true);
+
+        // guarda a layer original (caso queira restaurar em pooling)
+        originalLayer = gameObject.layer;
     }
 
     void Start()
@@ -156,20 +179,20 @@ public class ChickeFly : MonoBehaviour
         }
     }
 
-    // ----------------- morte/queda -----------------
+    // ----------------- morte/queda (idêntico ao EnemyWalker, com proteções extras) -----------------
     void Die()
     {
         if (isDead) return;
         isDead = true;
 
-        // 1) desativa colisores (vira fantasma)
-        if (allColliders != null)
+        // 1) Desabilita TODOS os colliders (como no EnemyWalker)
+        if (disableCollidersOnDeath && allColliders != null)
         {
-            for (int i = 0; i < allColliders.Length; i++)
-                if (allColliders[i]) allColliders[i].enabled = false;
+            foreach (var c in allColliders)
+                if (c) c.enabled = false;
         }
 
-        // 2) solta a física e cai
+        // 2) Libera a física e cai (padrão EnemyWalker)
         rb.constraints = RigidbodyConstraints2D.None;
         rb.bodyType = RigidbodyType2D.Dynamic;
         rb.gravityScale = deathGravity;
@@ -180,12 +203,27 @@ public class ChickeFly : MonoBehaviour
         if (Mathf.Abs(deathTorque) > 0.01f)
             rb.AddTorque(deathTorque * -dirKnock, ForceMode2D.Impulse);
 
-        // 3) animação opcional
+        // 3) Garante que nada colida após a morte
+        if (changeLayerOnDeath)
+        {
+            int deadLayer = LayerMask.NameToLayer(deadLayerName);
+            if (deadLayer >= 0) gameObject.layer = deadLayer;
+        }
+
+        // Opcional: excluir colisões via Rigidbody2D (Unity recentes)
+#if UNITY_6_0_OR_NEWER || UNITY_2022_3_OR_NEWER
+        if (useExcludeLayersOnDeath)
+        {
+            rb.excludeLayers |= ignoreOnDeath;
+        }
+#endif
+
+        // 4) animação opcional + eventos
         if (animator && !string.IsNullOrEmpty(deadTrigger))
             animator.SetTrigger(deadTrigger);
-
-        // 4) eventos externos (pontuação, VFX etc.)
         onDie?.Invoke();
+        if (GameController.Instance)
+            GameController.Instance.RegisterEnemyDefeated(scoreValue);
 
         // 5) destruir fora da tela (ou por timeout)
         if (destroyOnDeath)

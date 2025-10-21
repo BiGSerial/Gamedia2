@@ -56,6 +56,9 @@ public class EnemyWalker : MonoBehaviour
     [Header("Áudio (opcional)")]
     public AudioSource deathSound;
 
+    [Header("Pontuacao")]
+    [SerializeField] int scoreValue = 150;
+
     [Header("Eventos (opcionais)")]
     public UnityEvent onDie;
     public UnityEvent onPlayerHit;
@@ -252,6 +255,8 @@ public class EnemyWalker : MonoBehaviour
 
         if (animator && !string.IsNullOrEmpty(deadTrigger)) animator.SetTrigger(deadTrigger);
         onDie?.Invoke();
+        if (GameController.Instance)
+            GameController.Instance.RegisterEnemyDefeated(scoreValue);
 
         if (destroyOnDeath) InvokeRepeating(nameof(CheckOffscreenAndDestroy), 0.15f, 0.15f);
         Destroy(gameObject, deathTimeout);

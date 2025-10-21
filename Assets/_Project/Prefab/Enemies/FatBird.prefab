@@ -15,9 +15,9 @@ GameObject:
   - component: {fileID: 1062037115041083749}
   - component: {fileID: 3674201160457633483}
   - component: {fileID: 8959344879585520773}
-  m_Layer: 0
+  m_Layer: 11
   m_Name: FatBird
-  m_TagString: Untagged
+  m_TagString: Enemy
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
   m_StaticEditorFlags: 0
@@ -83,7 +83,7 @@ SpriteRenderer:
   m_GlobalIlluminationMeshLod: 0
   m_SortingLayerID: 0
   m_SortingLayer: 0
-  m_SortingOrder: 0
+  m_SortingOrder: 3
   m_Sprite: {fileID: -8116256361858104333, guid: 60beccb521110cf40be533c702156072, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -231,10 +231,29 @@ MonoBehaviour:
   deathSound: {fileID: 8959344879585520773}
   onDie:
     m_PersistentCalls:
-      m_Calls: []
+      m_Calls:
+      - m_Target: {fileID: 0}
+        m_TargetAssemblyTypeName: 
+        m_MethodName: 
+        m_Mode: 0
+        m_Arguments:
+          m_ObjectArgument: {fileID: 0}
+          m_ObjectArgumentAssemblyTypeName: 
+          m_IntArgument: 0
+          m_FloatArgument: 0
+          m_StringArgument: 
+          m_BoolArgument: 0
+        m_CallState: 1
   onPlayerBounce:
     m_PersistentCalls:
       m_Calls: []
+  disableCollidersOnDeath: 1
+  changeLayerOnDeath: 1
+  deadLayerName: Dead
+  useExcludeLayersOnDeath: 1
+  ignoreOnDeath:
+    serializedVersion: 2
+    m_Bits: 0
 --- !u!82 &8959344879585520773
 AudioSource:
   m_ObjectHideFlags: 0

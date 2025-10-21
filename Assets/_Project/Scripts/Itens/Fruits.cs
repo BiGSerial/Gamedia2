@@ -56,6 +56,10 @@ public class Fruits : MonoBehaviour
         if (pickupSfx)
             AudioSource.PlayClipAtPoint(pickupSfx, Camera.main ? Camera.main.transform.position : transform.position, sfxVolume);
 
+        // 3) Lógica de jogo
+        if (GameController.Instance)
+            GameController.Instance.RegisterFruitCollect(scoreValue, collectAmount);
+
         // 3) Eventos (conecte seu GameController aqui depois)
         onCollected?.Invoke(scoreValue, collectAmount);
         onCollectedSimple?.Invoke();

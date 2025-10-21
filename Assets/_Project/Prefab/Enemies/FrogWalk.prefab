@@ -245,6 +245,7 @@ MonoBehaviour:
   direction: -1
   autoDirection: 1
   invertInitialDirection: 0
+  invertFacing: 0
   groundCheck: {fileID: 972500898073629676}
   wallCheck: {fileID: 5707757247722731884}
   groundCheckDistance: 1
@@ -255,8 +256,9 @@ MonoBehaviour:
   wallMask:
     serializedVersion: 2
     m_Bits: 1024
-  flipCooldown: 0.15
   edgeProbeAhead: 0.1
+  flipCooldown: 0.15
+  playerTag: Player
   stompYOffset: 0.1
   stompBounce: 8
   destroyOnDeath: 1
@@ -268,7 +270,6 @@ MonoBehaviour:
   deathTimeout: 4
   hitCooldown: 0.35
   hitKnockbackX: 6
-  playerTag: Player
   animator: {fileID: 3846494615602806013}
   walkBool: walk
   deadTrigger: dead
